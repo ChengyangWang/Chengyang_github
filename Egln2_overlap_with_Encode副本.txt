@@ -1,5 +1,5 @@
 Compared_TF overlap proportion_of_compared_TF
-wgEncodeHaibTfbsEcc1Tcf12V0422111PkRep1.broadPeak 44651 27542 0.61682829052
+wgEncodeHaibTfbsEcc1Tcf12V0422111PkRep1.broadPeak123 44651 27542 0.61682829052
 wgEncodeHaibTfbsEcc1Nficsc81335V0422111PkRep2.broadPeak 62200 21882 0.351800643087
 wgEncodeUwTfbsHcpeCtcfStdHotspotsRep1.broadPeak 233119 20369 0.0873759753602
 wgEncodeSydhTfbsMcf10aesCmycEtoh01HvdPk.narrowPeak 115937 20200 0.174232557337
