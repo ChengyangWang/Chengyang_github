@@ -8,7 +8,7 @@ import numpy
 
 parser=OptionParser()
 parser.add_option("-k","--kcluster",dest="k",type="int")#higher cluster number 
-parser.add_option("-o","--output",dest="output",type="str")#output_cluster
+#parser.add_option("-o","--output",dest="output",type="str")#output_cluster
 parser.add_option("-i","--input",dest="input",type="str")#input genelist
 parser.add_option("-d","--directory",dest="directory",type="str")#directory
 parser.add_option("-c","--chrom",dest="chrom",type="str")#directory
@@ -121,27 +121,34 @@ def main():
    Pfile.writelines("""\ndev.off()""")
    Pfile.close()
    
-   ncluster=input('Picture has been generated, Please input the number of clusters'+'(<'+str(options.k)+'): ')
+   #ncluster=input('Picture has been generated, Please input the number of clusters'+'(<'+str(options.k)+'): ')
+   ncluster=options.k
    nordered=total_number
-   compart=[]
+   
    while True:
-      if ncluster<2:break
-      #file=open(options.directory+'/clusterresult/'+str(ncluster)+'.txt','w')
-      start=index[nordered][ncluster]
-      compart.insert(0,int(start))
+      if ncluster<=0:break
+      compart=[]
+      current_cluster=ncluster
+      current_ordered=nordered
+      while True:
+         if current_cluster<2:break
+         #file=open(options.directory+'/clusterresult/'+str(ncluster)+'.txt','w')
+         start=index[current_ordered][current_cluster]
+         compart.insert(0,int(start))
+         current_cluster-=1
+         current_ordered=int(start)-1
+
+      compart.insert(0,1)
+      compart.append(total_number+1)
+
+      #print compart
+      output=open(options.directory+'/'+options.chrom+'_'+str(ncluster)+'.bed','w')
+      for i in range(len(compart)-1):
+         content=[options.chrom,str((compart[i]-1)*int(options.resolution)),str((compart[i+1]-1)*int(options.resolution)),str(i%2)]
+         output.writelines("\t".join(content)+'\n')
+      output.close()
+      
       ncluster-=1
-      nordered=int(start)-1
-
-   compart.insert(0,1)
-   compart.append(total_number+1)
-
-   print compart
-   output=open(options.output,'w')
-   for i in range(len(compart)-1):
-      content=[options.chrom,str((compart[i]-1)*int(options.resolution)),str((compart[i+1]-1)*int(options.resolution)),str(i%2)]
-      output.writelines("\t".join(content)+'\n')
-
-   output.close()
 
 
 if __name__=='__main__':
