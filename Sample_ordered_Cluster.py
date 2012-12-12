@@ -7,7 +7,7 @@ import os
 import numpy
 
 parser=OptionParser()
-parser.add_option("-k","--kcluster",dest="k",type="int")#higher cluster number 
+parser.add_option("-k","--kcluster",dest="k",type="int")#highest cluster number 
 #parser.add_option("-o","--output",dest="output",type="str")#output_cluster
 parser.add_option("-i","--input",dest="input",type="str")#input genelist
 parser.add_option("-d","--directory",dest="directory",type="str")#directory
