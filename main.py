@@ -2,6 +2,8 @@
 
 from optparse import OptionParser
 parser = OptionParser()
+parser.add_option("-r","--refseq",dest="refseq",type="str")#refseq_file
+parser.add_option("--header",dest="header",type="int")#header
 parser.add_option("-b","--boundary",dest="boundary",type="str")#boundary_file
 parser.add_option("-p","--peak",dest="peak",type="str")###peaks
 parser.add_option("-e","--expression",dest="expression",type="str")###expression
@@ -9,67 +11,105 @@ parser.add_option("-o","--output",dest="output",type="str")##output.csv
 (options,args)=parser.parse_args()
 
 
-###output {chrom:[[start,end,boundary_score]]}
+###output {chrom:[0,1000,5000...]}
 def read_boundary_score(boundary_score_file):
    file=open(boundary_score_file) 
-   file.readline()
-   file.readline()
-   boundary={"chr19":[]}
+   boundary={}
    while True:
       line=file.readline()
       if not line:break
       line=line.strip().split()
-      boundary["chr19"].append([int(line[0]),int(line[0])+5000,float(line[1])])
-   boundary["chr19"].sort(key=lambda x:x[2],reverse=True)
-   for i in range(len(boundary["chr19"])):
-      boundary["chr19"][i][2]=1-float(i)/len(boundary["chr19"])
-   boundary["chr19"].sort(key=lambda x:x[0])
+      try:
+         boundary[line[0]].append(int(line[2]))
+      except KeyError:
+         boundary[line[0]]=[0,int(line[2])]
 
    print "finish boundary file reading\n"
    return boundary
       
-##output {chrom:[[start,end,signal]]}
+##output {chrom:[[peak_ID, summit, signal]]}
 def read_peak(peak_file):
    file=open(peak_file)
-   a={}
+   peak_chrom_dic={}
+   intensity=[]
    while True:
       line=file.readline()
       if not line:break
       line=line.split()
       try:
-         a[line[0]].append([int(line[1]),int(line[2]),float(line[4])])
+         peak_chrom_dic[line[0]].append([line[3],int(line[1]),float(line[4])])
+         intensity.append(float(line[4]))
       except KeyError:
-         a[line[0]]=[[int(line[1]),int(line[2]),float(line[4])]]
+         peak_chrom_dic[line[0]]=[[line[3],int(line[1]),float(line[4])]]
+
+   intensity.sort()
+   intensity_dic={}
+   for i in range(len(intensity)):
+      intensity_dic[intensity[i]]=float(i+1)/len(intensity)   
+
+   for key in peak_chrom_dic.keys():
+      peak_chrom=peak_chrom_dic[key]
+      for value in peak_chrom:
+         value[2]=intensity_dic[value[2]]
 
    print "finish peak file reading\n"
-   return a
+   return peak_chrom_dic
 
-### output {chrom:[[symbol,TSS,TTS,FC]]}
-def read_expression(expression_file):
-   file=open(expression_file)
-   file.readline()
-   output_list={}
+####output {refseq_ID:[chrom,TSS,gene_ID]}
+def read_anotation(refseq_file):
+   file=open(refseq)
+   refseq_dic={}
    while True:
       line=file.readline()
       if not line:break
-      line=line.split()
+      line=line.strip().split("|")
       if line[2]=="+":
-         try:
-            output_list[line[1]].append([line[0],int(line[3]),int(line[4]),float(line[7])])
-         except KeyError:
-            output_list[line[1]]=[[line[0],int(line[3]),int(line[4]),float(line[7])]]
+         refseq_dic[line[1]]=[line[0],int(line[3]),line[-1]]
       else:
-         try:
-            output_list[line[1]].append([line[0],int(line[4]),int(line[3]),float(line[7])])
-         except KeyError:
-            output_list[line[1]]=[[line[0],int(line[4]),int(line[3]),float(line[7])]]
+         refseq_dic[line[1]]=[line[0],int(line[4]),line[-1]]
+   return refseq_dic
+
+### output {chrom:[[TSS,refseq_ID,gene_ID,log(FC)]]}
+def read_expression(expression_file，refseq_file,header,upregulate=True):
+   refseq_dic=read_anotation(refseq_file)
+   file=open(expression_file)
+   file.readline()
+   output_list={}
+   i=0
+   while True:
+      line=file.readline()
+      i+=1
+      if (not line) or (i==header+1):break
+      line=line.strip().split("\t")
+
+      refseq_ID=line[1][1:-4]
+      logFC=float(line[2])
+
+      if upregulate:
+         if logFC<0:
+            continue
+      else:
+         if logFC>0:
+            continue
+
+      try:
+         refseq_information=refseq_dic[refseq_ID] ##[chrom,TSS,gene_ID]
+      except KeyError:
+         print refseq_ID
+         continue
+
+      try:
+         output_list[refseq_information[0]].append([refseq_information[1],refseq_ID,refseq_information[2],logFC])
+         ### output {chrom:[[TSS,refseq_ID,gene_ID,log(FC)]]}
+      except KeyError:
+         output_list[refseq_information[0]]=[refseq_information[1],refseq_ID,refseq_information[2],logFC]
 
    print "finish expression file reading\n"
    return output_list
 
 
 ##rapid searching
-def searchend(sequence,number,lower,upper):
+def searchend_for_boundary(sequence,number,lower,upper):
     if lower==upper-1:
         if sequence[lower][0]<=number<sequence[upper][0]: return lower
         elif number<sequence[lower][0]: return lower-1   #if data<all
@@ -81,90 +121,85 @@ def searchend(sequence,number,lower,upper):
         else:
             return searchend(sequence,number,lower,middle)
 
-###core_function scope=absolute distance
-def core_function(peak_position_index,peak_signal,chrom_boundary_list,scope=100000):
-   basic_domain_width=chrom_boundary_list[0][1]-chrom_boundary_list[0][0]
-   extent_index=scope/basic_domain_width
-   
-   right=[[chrom_boundary_list[peak_position_index][0],chrom_boundary_list[peak_position_index][1],peak_signal]]
-   for i in range(1,min(extent_index,len(chrom_boundary_list)-peak_position_index-1)+1):
-      impact=-right[i-1][2]*(0.1*chrom_boundary_list[peak_position_index+i-1][2]-1)
-      right.append([chrom_boundary_list[peak_position_index+i][0],chrom_boundary_list[peak_position_index+i][1],impact])
+def searchend_for_peak(sequence,number,lower,upper):
+    if lower==upper-1:
+        if sequence[lower][1]<=number<sequence[upper][1]: return lower
+        elif number<sequence[lower][1]: return lower-1   #if data<all
+        else: return upper
+    else:
+        middle=(lower+upper)/2
+        if number>sequence[middle][1]:
+            return searchend(sequence,number,middle,upper)
+        else:
+            return searchend(sequence,number,lower,middle)
 
-   left=[[chrom_boundary_list[peak_position_index][0],chrom_boundary_list[peak_position_index][1],peak_signal]]
-   for i in range(1,min(extent_index,peak_position_index)+1):
-      impact=-left[i-1][2]*(0.1*chrom_boundary_list[peak_position_index-i+1][2]-1)
-      left.append([chrom_boundary_list[peak_position_index-i][0],chrom_boundary_list[peak_position_index-i][1],impact])
+def normalization(dictionary):
+   ###for Eucluid distance
+   intensity=[]
+   for value in dictionary.iteritems():
+      intensity.append(float(value[1]))
+   intensity.sort(reverse=True)
+   intensity_dic={}
 
-   left.reverse()
-   
-   return left[:-1]+right  ###[[start,end,influence]]
+   for i in range(len(intensity)):
+      intensity_dic[intensity[i]]=float(i+1)/len(intensity)   
+
+   for key in dictionary.keys():
+      dictionary[key]=intensity_dic[dictionary[key]]
+
+   del intensity_dic
+   del intensity
+
+   print "normalization has been finished"
       
+
 def main():
-   boundary_list=read_boundary_score(options.boundary)
-   peak_list=read_peak(options.peak)
-   expression_list=read_expression(options.expression)
+   boundary_dic=read_boundary_score(options.boundary)
+   ### {chrom:[0,1000,5000...]}
+
+   peak_dic=read_peak(options.peak)
+   ## {chrom:[[peak_ID, summit, signal]]}
+
+   expression_dic=read_expression(options.expression,options.refseq,options.header)
+   ### {chrom:[[TSS,refseq_ID,gene_ID,log(FC)]]}
+
    output_file=open(options.output,'w')
-   influence_dic={} ##{chrom:[]}
    
    chrom_list=['chr'+v for v in map(str,range(1,30))+['X','Y']]
 
-
-   ###influence umbrella
+   gene_regulation_dic={} ###(refseq_ID,gene_ID):[[logFC,peak,distance,boundary_number,similarity]]
    for chrom in chrom_list:
-      try:
-         chrom_peak_list=peak_list[chrom]
-         chrom_boundary_list=boundary_list[chrom]
-         length_chrom_boundary_list=len(chrom_boundary_list)
-         influence_dic[chrom]=[]
-      except KeyError:
-         continue
-      for peak in chrom_peak_list:
-         
-         peak_middle=(int(peak[0])+int(peak[1]))/2
-         peak_signal=float(peak[2])
-         peak_position_index=searchend(chrom_boundary_list,peak_middle,0,length_chrom_boundary_list-1)
-         influence=core_function(peak_position_index,peak_signal,chrom_boundary_list)
-         influence_dic[chrom]+=influence
-         "handle one peak"
+      boundary=boundary_dic[chrom]
+      peak=peak_dic[chrom]
+      expression=expression_dic[chrom]
 
+      for expression_value in expression:
 
-   ###integrate influence umbrella
-   for chrom in influence_dic:
-      influence_dic[chrom].sort(key=lambda x:int(x[0]))
-      i=-1
-      inf=0
-      result=[]
-      for v in influence_dic[chrom]:
-         if int(v[0])!=i and i!=-1:
-            result[-1].append(inf)
-            inf=float(v[2])
-            result.append([v[0],v[1]])
-            i=int(v[0])
-         elif int(v[0])!=i and i==-1:
-            inf=float(v[2])
-            result.append([v[0],v[1]])
-            i=int(v[0])
-         else:
-            inf+=float(v[2])
-      
-      influence_dic[chrom]=result
-      
-   ###influences are mapped to gene {chrom:[[symbol,TSS,FC]]}
-   for chrom in expression_list:
-      try:
-         chrom_influence_list=influence_dic[chrom]
-      except KeyError:
-         continue
+         refseq_ID=expression_value[1]
+         gene_ID=expression_value[2]
+         TSS=expression_value[0]
+         logFC=expression_value[3]
 
-      
-      for sample in expression_list[chrom]:
-         TSS_position=searchend(chrom_influence_list,int(sample[1]),0,len(chrom_influence_list)-1)
-         if TSS_position==-1 or TSS_position>len(chrom_influence_list)-1 or sample[3]<=1:
-            continue
-         output_file.writelines(sample[0]+' '+str(chrom_influence_list[TSS_position][2])+' '+str(sample[1])+' '+
-                                str(sample[2])+' '+str(sample[3])+'\n')
-   output_file.close()
+         gene_regulation_dic[(refseq_ID,gene_ID)]=[]
+
+         peak_start=searchend_for_peak(peak,TSS-100000,0,len(peak)-1)+1
+         peak_end=searchend_for_peak(peak,TSS+100000,0,len(peak)-1)
+
+         TSS_boundary=searchend_for_boundary(boundary,TSS,0,len(boundary)-1)
+         for peak_index in range(peak_start,peak_end+1):
+            peak_ID=peak[peak_index][0]
+            summit=peak[peak_index][1]
+            summit_boundary=searchend_for_boundary(boundary,summit,0,len(boundary)-1)
+            if summit <= TSS:
+               boundary_number=TSS_boundary-summit_boundary
+            else:
+               boundary_number=summit_boundary-TSS_boundary
+
+            distance=abs(TSS-summit)/float(100000)
+
+            gene_regulation_dic[(refseq_ID,gene_ID)].append([logFC,peak_ID,distance,boundary_number])
+
+   print gene_regulation_dic
 
 main()
 
