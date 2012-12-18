@@ -161,15 +161,11 @@ def profile(open_wig,chrom,interval):
       profile.append(float((summary.sum_data / summary.valid_count)[0]))
   return profile
 
-def close_wigs(open_wig):
-  for i in range(len(open_wig)):
-    open_wig[i].close()
-
 ###gene_regulation_dic (refseq_ID,gene_ID):[[logFC,peak,distance,boundary_number,similarity]]
 def normalization(gene_regulation_dic):
    ###for Eucluid distance
    similarity=[]
-   for value in dictionary.iteritems():
+   for value in gene_regulation_dic.iteritems():
       for infor_value in value[1]:
         similarity.append(float(infor_value[4]))
 
@@ -245,11 +241,11 @@ def main():
 
             gene_regulation_dic[(refseq_ID,gene_ID)].append([logFC,peak_ID,distance,boundary_number,similarity_score])
 
-          gene_regulation_dic[(refseq_ID,gene_ID)].sort(key=lambda x:x[2],reverse=True)
+         gene_regulation_dic[(refseq_ID,gene_ID)].sort(key=lambda x:x[2],reverse=True)
 
-  close_wigs(open_wig)
-  normalization(gene_regulation_dic)
-  print gene_regulation_dic
+   
+   normalization(gene_regulation_dic)
+   #print gene_regulation_dic
 
 main()
 
