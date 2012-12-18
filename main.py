@@ -7,7 +7,7 @@ parser.add_option("--header",dest="header",type="int")#header
 parser.add_option("-b","--boundary",dest="boundary",type="str")#boundary_file
 parser.add_option("-p","--peak",dest="peak",type="str")###peaks
 parser.add_option("-e","--expression",dest="expression",type="str")###expression
-parser.add_option("-o","--output",dest="output",type="str")##output.csv
+#parser.add_option("-o","--output",dest="output",type="str")##output.csv
 (options,args)=parser.parse_args()
 
 
@@ -41,11 +41,14 @@ def read_peak(peak_file):
          intensity.append(float(line[4]))
       except KeyError:
          peak_chrom_dic[line[0]]=[[line[3],int(line[1]),float(line[4])]]
+         intensity.append(float(line[4]))
 
    intensity.sort()
    intensity_dic={}
+
    for i in range(len(intensity)):
       intensity_dic[intensity[i]]=float(i+1)/len(intensity)   
+   
 
    for key in peak_chrom_dic.keys():
       peak_chrom=peak_chrom_dic[key]
@@ -57,7 +60,7 @@ def read_peak(peak_file):
 
 ####output {refseq_ID:[chrom,TSS,gene_ID]}
 def read_anotation(refseq_file):
-   file=open(refseq)
+   file=open(refseq_file)
    refseq_dic={}
    while True:
       line=file.readline()
@@ -70,7 +73,7 @@ def read_anotation(refseq_file):
    return refseq_dic
 
 ### output {chrom:[[TSS,refseq_ID,gene_ID,log(FC)]]}
-def read_expression(expression_file，refseq_file,header,upregulate=True):
+def read_expression(expression_file,refseq_file,header,upregulate=True):
    refseq_dic=read_anotation(refseq_file)
    file=open(expression_file)
    file.readline()
@@ -102,7 +105,7 @@ def read_expression(expression_file，refseq_file,header,upregulate=True):
          output_list[refseq_information[0]].append([refseq_information[1],refseq_ID,refseq_information[2],logFC])
          ### output {chrom:[[TSS,refseq_ID,gene_ID,log(FC)]]}
       except KeyError:
-         output_list[refseq_information[0]]=[refseq_information[1],refseq_ID,refseq_information[2],logFC]
+         output_list[refseq_information[0]]=[[refseq_information[1],refseq_ID,refseq_information[2],logFC]]
 
    print "finish expression file reading\n"
    return output_list
@@ -111,15 +114,15 @@ def read_expression(expression_file，refseq_file,header,upregulate=True):
 ##rapid searching
 def searchend_for_boundary(sequence,number,lower,upper):
     if lower==upper-1:
-        if sequence[lower][0]<=number<sequence[upper][0]: return lower
-        elif number<sequence[lower][0]: return lower-1   #if data<all
+        if sequence[lower]<=number<sequence[upper]: return lower
+        elif number<sequence[lower]: return lower-1   #if data<all
         else: return upper
     else:
         middle=(lower+upper)/2
-        if number>sequence[middle][0]:
-            return searchend(sequence,number,middle,upper)
+        if number>sequence[middle]:
+            return searchend_for_boundary(sequence,number,middle,upper)
         else:
-            return searchend(sequence,number,lower,middle)
+            return searchend_for_boundary(sequence,number,lower,middle)
 
 def searchend_for_peak(sequence,number,lower,upper):
     if lower==upper-1:
@@ -129,9 +132,9 @@ def searchend_for_peak(sequence,number,lower,upper):
     else:
         middle=(lower+upper)/2
         if number>sequence[middle][1]:
-            return searchend(sequence,number,middle,upper)
+            return searchend_for_peak(sequence,number,middle,upper)
         else:
-            return searchend(sequence,number,lower,middle)
+            return searchend_for_peak(sequence,number,lower,middle)
 
 def normalization(dictionary):
    ###for Eucluid distance
@@ -161,19 +164,23 @@ def main():
    ## {chrom:[[peak_ID, summit, signal]]}
 
    expression_dic=read_expression(options.expression,options.refseq,options.header)
+   #print expression_dic
    ### {chrom:[[TSS,refseq_ID,gene_ID,log(FC)]]}
 
-   output_file=open(options.output,'w')
+   #output_file=open(options.output,'w')
    
    chrom_list=['chr'+v for v in map(str,range(1,30))+['X','Y']]
 
    gene_regulation_dic={} ###(refseq_ID,gene_ID):[[logFC,peak,distance,boundary_number,similarity]]
    for chrom in chrom_list:
+      if chrom!="chr1":
+         break
       boundary=boundary_dic[chrom]
       peak=peak_dic[chrom]
       expression=expression_dic[chrom]
 
       for expression_value in expression:
+         #print expression_value
 
          refseq_ID=expression_value[1]
          gene_ID=expression_value[2]
@@ -198,6 +205,8 @@ def main():
             distance=abs(TSS-summit)/float(100000)
 
             gene_regulation_dic[(refseq_ID,gene_ID)].append([logFC,peak_ID,distance,boundary_number])
+
+         gene_regulation_dic[(refseq_ID,gene_ID)].sort(key=lambda x:x[2],reverse=True)
 
    print gene_regulation_dic
 
