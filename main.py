@@ -1,12 +1,16 @@
 ###peak_association
 
 from optparse import OptionParser
+from bx.bbi.bigwig_file import BigWigFile
+from scipy import spatial
+
 parser = OptionParser()
 parser.add_option("-r","--refseq",dest="refseq",type="str")#refseq_file
 parser.add_option("--header",dest="header",type="int")#header
 parser.add_option("-b","--boundary",dest="boundary",type="str")#boundary_file
 parser.add_option("-p","--peak",dest="peak",type="str")###peaks
 parser.add_option("-e","--expression",dest="expression",type="str")###expression
+parser.add_option("-w","--bw",dest="wig",type="string",action="append")
 #parser.add_option("-o","--output",dest="output",type="str")##output.csv
 (options,args)=parser.parse_args()
 
@@ -136,22 +140,51 @@ def searchend_for_peak(sequence,number,lower,upper):
         else:
             return searchend_for_peak(sequence,number,lower,middle)
 
-def normalization(dictionary):
+##open wig
+def open_wigs(wig):
+  open_wig=[]
+  for i in range(len(wig)):
+    open_wig.append(BigWigFile(open(wig[i], 'rb')))
+  return open_wig
+
+def profile(open_wig,chrom,interval):
+  profile=[]
+  for i in range(len(open_wig)):
+    try:
+      summary=open_wig[i].summarize(chrom,interval[0],interval[1],1)
+    except:
+      print chrom,interval[0],interval[1]
+
+    if not summary:
+      profile.append(0.0)
+    else:
+      profile.append(float((summary.sum_data / summary.valid_count)[0]))
+  return profile
+
+def close_wigs(open_wig):
+  for i in range(len(open_wig)):
+    open_wig[i].close()
+
+###gene_regulation_dic (refseq_ID,gene_ID):[[logFC,peak,distance,boundary_number,similarity]]
+def normalization(gene_regulation_dic):
    ###for Eucluid distance
-   intensity=[]
+   similarity=[]
    for value in dictionary.iteritems():
-      intensity.append(float(value[1]))
-   intensity.sort(reverse=True)
-   intensity_dic={}
+      for infor_value in value[1]:
+        similarity.append(float(infor_value[4]))
 
-   for i in range(len(intensity)):
-      intensity_dic[intensity[i]]=float(i+1)/len(intensity)   
+   similarity.sort(reverse=True)
+   similarity_dic={}
 
-   for key in dictionary.keys():
-      dictionary[key]=intensity_dic[dictionary[key]]
+   for i in range(len(similarity)):
+      similarity_dic[similarity[i]]=float(i+1)/len(similarity)   
 
-   del intensity_dic
-   del intensity
+   for key in gene_regulation_dic.keys():
+      for value in gene_regulation_dic[key]:
+        value[4]=similarity_dic[value[4]]
+
+   del similarity_dic
+   del similarity
 
    print "normalization has been finished"
       
@@ -164,12 +197,13 @@ def main():
    ## {chrom:[[peak_ID, summit, signal]]}
 
    expression_dic=read_expression(options.expression,options.refseq,options.header)
-   #print expression_dic
    ### {chrom:[[TSS,refseq_ID,gene_ID,log(FC)]]}
 
-   #output_file=open(options.output,'w')
+   open_wig=open_wigs(options.wig)
    
    chrom_list=['chr'+v for v in map(str,range(1,30))+['X','Y']]
+
+   
 
    gene_regulation_dic={} ###(refseq_ID,gene_ID):[[logFC,peak,distance,boundary_number,similarity]]
    for chrom in chrom_list:
@@ -193,6 +227,8 @@ def main():
          peak_end=searchend_for_peak(peak,TSS+100000,0,len(peak)-1)
 
          TSS_boundary=searchend_for_boundary(boundary,TSS,0,len(boundary)-1)
+         TSS_profile=profile(open_wig,chrom,[TSS-1000,TSS+1000])
+
          for peak_index in range(peak_start,peak_end+1):
             peak_ID=peak[peak_index][0]
             summit=peak[peak_index][1]
@@ -204,11 +240,16 @@ def main():
 
             distance=abs(TSS-summit)/float(100000)
 
-            gene_regulation_dic[(refseq_ID,gene_ID)].append([logFC,peak_ID,distance,boundary_number])
+            peak_profile=profile(open_wig,chrom,[summit-1000,summit+1000])
+            similarity_score=spatial.distance.euclidean(TSS_profile,peak_profile)
 
-         gene_regulation_dic[(refseq_ID,gene_ID)].sort(key=lambda x:x[2],reverse=True)
+            gene_regulation_dic[(refseq_ID,gene_ID)].append([logFC,peak_ID,distance,boundary_number,similarity_score])
 
-   print gene_regulation_dic
+          gene_regulation_dic[(refseq_ID,gene_ID)].sort(key=lambda x:x[2],reverse=True)
+
+  close_wigs(open_wig)
+  normalization(gene_regulation_dic)
+  print gene_regulation_dic
 
 main()
 
