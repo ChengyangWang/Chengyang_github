@@ -148,7 +148,7 @@ def main():
          output.writelines("\t".join(content)+'\n')
       output.close()
       
-      ncluster-=1
+      ncluster-=10
 
 
 if __name__=='__main__':
