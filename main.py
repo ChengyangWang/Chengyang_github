@@ -3,17 +3,51 @@
 from optparse import OptionParser
 from bx.bbi.bigwig_file import BigWigFile
 from scipy import spatial
+import os
+import re
+import cPickle
 
 parser = OptionParser()
 parser.add_option("-r","--refseq",dest="refseq",type="str")#refseq_file
 parser.add_option("--header",dest="header",type="int")#header
-parser.add_option("-b","--boundary",dest="boundary",type="str")#boundary_file
+#parser.add_option("-b","--boundary",dest="boundary",type="str")#boundary_file
+parser.add_option("-d","--directory",dest="directory",type="str")#boundary_file
 parser.add_option("-p","--peak",dest="peak",type="str")###peaks
 parser.add_option("-e","--expression",dest="expression",type="str")###expression
 parser.add_option("-w","--bw",dest="wig",type="string",action="append")
-#parser.add_option("-o","--output",dest="output",type="str")##output.csv
+parser.add_option("-o","--output_directory",dest="output_directory",type="str")##output directory
 (options,args)=parser.parse_args()
 
+def read_boundary_score_from_directory(directory):
+   boundary={}
+   dirs=os.listdir(directory)
+   for dir_item in dirs:
+    if re.match(r"chr.",dir_item):
+      max_number=0
+      sub_dirs=os.listdir(directory+'/'+dir_item)
+      for sub_dirs_item in sub_dirs:
+        if re.match(r"%s_."%dir_item,sub_dirs_item):
+          current_number=int(sub_dirs_item.split(".")[0].split("_")[1])
+          if current_number>=max_number:
+            max_number=current_number
+          else:
+            pass
+        else:
+          pass
+
+      file=open(directory+'/'+dir_item+'/'+dir_item+"_"+str(max_number)+".bed")
+      while True:
+        line=file.readline()
+        if not line:break
+        line=line.strip().split()
+        try:
+          boundary[line[0]].append(int(line[2]))
+        except KeyError:
+          boundary[line[0]]=[0,int(line[2])]
+      file.close()
+    else:
+      pass
+   return boundary
 
 ###output {chrom:[0,1000,5000...]}
 def read_boundary_score(boundary_score_file):
@@ -184,9 +218,36 @@ def normalization(gene_regulation_dic):
 
    print "normalization has been finished"
       
+def write_files(gene_regulation_dic,output_directory,header):
+  output_file=open(output_directory+'/'+'information_'+str(header)+'.txt','w')
+  cPickle.dump(gene_regulation_dic,output_file)
+  output_file.close()
+  ###(refseq_ID,gene_ID):[[logFC,peak,distance,boundary_number,similarity]]
+
+  output_gene_symbol=open(output_directory+'/'+'gene_symbol.txt','w')
+  output_logFC=open(output_directory+'/'+'logFC.txt','w')
+  output_distance=open(output_directory+'/'+'distance.txt','w')
+  output_boundary_number=open(output_directory+'/'+'lboundary_number.txt','w')
+  output_similarity=open(output_directory+'/'+'similarity.txt','w')
+
+  for value in gene_regulation_dic.iteritems():
+    for infor in value[1]:
+      output_gene_symbol.writelines(value[0][0]+'_'+value[0][1]+'\t')
+      output_logFC.writelines(str(infor[0])+'\t')
+      output_distance.writelines(str(infor[2])+'\t')
+      output_boundary_number.writelines(str(infor[3])+'\t')
+      output_similarity.writelines(str(infor[4])+'\t')
+
+  output_gene_symbol.close()
+  output_logFC.close()
+  output_distance.close()
+  output_boundary_number.close()
+  output_similarity.close()
+
 
 def main():
-   boundary_dic=read_boundary_score(options.boundary)
+   boundary_dic=read_boundary_score_from_directory(options.directory)
+   #boundary_dic=read_boundary_score(options.boundary)
    ### {chrom:[0,1000,5000...]}
 
    peak_dic=read_peak(options.peak)
@@ -197,14 +258,12 @@ def main():
 
    open_wig=open_wigs(options.wig)
    
-   chrom_list=['chr'+v for v in map(str,range(1,30))+['X','Y']]
-
+   chrom_list=boundary_dic.keys()
    
 
    gene_regulation_dic={} ###(refseq_ID,gene_ID):[[logFC,peak,distance,boundary_number,similarity]]
    for chrom in chrom_list:
-      if chrom!="chr1":
-         break
+
       boundary=boundary_dic[chrom]
       peak=peak_dic[chrom]
       expression=expression_dic[chrom]
@@ -243,9 +302,16 @@ def main():
 
          gene_regulation_dic[(refseq_ID,gene_ID)].sort(key=lambda x:x[2],reverse=True)
 
+      print "%s is finished"%chrom
+
    
    normalization(gene_regulation_dic)
+   write_files(gene_regulation_dic,options.output_directory,options.header)
+
+   
    #print gene_regulation_dic
+
+
 
 main()
 
